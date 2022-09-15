@@ -13,12 +13,19 @@ enum Result
 	lose
 };
 
+enum Pattern
+{
+	random,
+	analyse_1
+};
+
 
 void Menu()
 {
 	std::array<int, 3> game_results = LoadResults();
 	std::vector<char> player_choices = LoadChoices("player_choices.bin");
 	std::vector<char> cpu_choices = LoadChoices("cpu_choices.bin");
+	int cpu_pattern = random;
 
 	char input = ' ';
 	while (input != 'q')
@@ -26,18 +33,21 @@ void Menu()
 		std::cout << "===================\n";
 		const auto str = R"(Main menu:
 1 - play the game
-2 - save statistic
-3 - check winrate
+2 - configure computer's choice pattern
+3 - save statistic
+4 - check winrate
 q - quit application
 )";
 		std::cout << str;
 		std::cout << "===================\n";
 		std::cin >> input;
 		if (input == '1')
-			Play(game_results, player_choices, cpu_choices);
+			Play(game_results, player_choices, cpu_choices, cpu_pattern);
 		else if (input == '2')
-			SaveStatistic(game_results, player_choices, cpu_choices);
+			ConfigCPU(cpu_pattern);
 		else if (input == '3')
+			SaveStatistic(game_results, player_choices, cpu_choices);
+		else if (input == '4')
 			CheckWinrate(game_results);
 		else if (input != 'q')
 			std::cout << "Wrong character!\n";
@@ -45,7 +55,7 @@ q - quit application
 
 }
 
-void Play(std::array<int, 3>& game_results, std::vector<char>& player_choices, std::vector<char>& cpu_choices)
+void Play(std::array<int, 3>& game_results, std::vector<char>& player_choices, std::vector<char>& cpu_choices, int cpu_pattern)
 {
 	static int counter;
 	char input = ' ';
@@ -65,7 +75,7 @@ p - chose "paper"
 		{
 			if (input == 'r' || input == 's' || input == 'p')
 			{
-				GameRound(counter, input, game_results, player_choices, cpu_choices);
+				GameRound(counter, input, game_results, player_choices, cpu_choices, cpu_pattern);
 				++counter;
 			}
 			else
@@ -76,30 +86,15 @@ p - chose "paper"
 
 void SaveStatistic(const std::array<int, 3>& game_results, const std::vector<char>& player_choices, const std::vector<char>& cpu_choices)
 {
-	//std::fstream results_file("results.bin", std::ios_base::out | std::ios_base::binary | std::ios_base::trunc);
-	//for (const auto val : game_results)
-	//	results_file.write(reinterpret_cast<const char*>(&val), sizeof(val));
-	//results_file.close();
-
-	//std::fstream player_choices_file("player_choices.bin", std::ios_base::out | std::ios_base::binary | std::ios_base::trunc);
-	//for (const auto val : player_choices)
-	//	player_choices_file.write(reinterpret_cast<const char*>(&val), sizeof(val));
-	//player_choices_file.close();
-
-	//std::fstream cpu_choices_file("cpu_choices.bin", std::ios_base::out | std::ios_base::binary | std::ios_base::trunc);
-	//for (const auto val : cpu_choices)
-	//	cpu_choices_file.write(reinterpret_cast<const char*>(&val), sizeof(val));
-	//cpu_choices_file.close();
-
 	ArrayToFile(game_results, "results.bin");
 	ArrayToFile(player_choices, "player_choices.bin");
 	ArrayToFile(cpu_choices, "cpu_choices.bin");
 }
 
-void GameRound(int turn, char choice, std::array<int, 3>& game_results, std::vector<char>& player_choices, std::vector<char>& cpu_choices)
+void GameRound(int turn, char choice, std::array<int, 3>& game_results, std::vector<char>& player_choices, std::vector<char>& cpu_choices, int cpu_pattern)
 {
 	std::cout << "Turn " << turn << "\n";
-	char cpu_choice = GetCpuChoice();
+	char cpu_choice = GetCpuChoice(cpu_pattern, player_choices);
 	int res = GetRoundResult(choice, cpu_choice);
 	if (res == win)
 		++game_results[0];
@@ -112,18 +107,70 @@ void GameRound(int turn, char choice, std::array<int, 3>& game_results, std::vec
 
 }
 
-char GetCpuChoice()
+char GetCpuChoice(int cpu_pattern, const std::vector<char>& player_choices)
 {
 	std::random_device rd;
 	std::mt19937 gen(rd());
-	std::uniform_int_distribution<> distrib(1, 3);
-	int res = distrib(gen);
-	if (res == 1)
-		return 'r';
-	else if (res == 2)
-		return 's';
+
+	if (cpu_pattern == analyse_1)
+	{
+		std::array<int, 3> rsp = { 0 };
+		if (player_choices.size() > 1)
+		{
+			char last_symbol = player_choices[player_choices.size() - 1];
+			for (auto i = 0; i < player_choices.size() - 1; ++i)
+			{
+				if (player_choices[i] == last_symbol)
+				{
+					if (player_choices[i + 1] == 'r')
+						++rsp[0];
+					else if (player_choices[i + 1] == 's')
+						++rsp[1];
+					else if (player_choices[i + 1] == 'p')
+						++rsp[2];
+				}
+			}
+		}
+
+		int counter = 0;
+		int max = 0;
+		for (const auto& val : rsp)
+			if (val > max)
+			{
+				max = val;
+				counter = 1;
+			}
+			else if (val == max)
+				++counter;
+		if (counter > 1)
+		{
+			std::uniform_int_distribution<> distrib(1, counter);
+			int res = distrib(gen);
+			for (auto i = 0; i < rsp.size(); ++i)
+				if (rsp[i] == max && res == 1)
+					return IntToChar(i);
+				else if (rsp[i] == max && res != 1)
+					--res;
+		}
+		else
+		{
+			for (auto i = 0; i < rsp.size(); ++i)
+				if (rsp[i] == max)
+					return IntToChar(i);
+		}
+		return ' ';
+	}
 	else
-		return 'p';
+	{
+		std::uniform_int_distribution<> distrib(1, 3);
+		int res = distrib(gen);
+		if (res == 1)
+			return 'r';
+		else if (res == 2)
+			return 's';
+		else
+			return 'p';
+	}
 }
 
 int GetRoundResult(char choice, char cpu_choice)
@@ -241,4 +288,44 @@ void CheckWinrate(const std::array<int,3>& arr)
 	double sum_w_l = arr[0] + arr[2];
 	std::cout << "Winrate: " << std::setprecision(4) << 100*arr[0]/sum_w_l << "\n";
 	std::cout << "===================\n";
+}
+
+void ConfigCPU(int& cpu_pattern)
+{
+	char input = ' ';
+	while (input != '0')
+	{
+		std::cout << "===================\n";
+		const auto str = R"(Configuration menu:
+1 - computer choice randomly(set by default)
+2 - computer choice more smart"
+0 - quit to main menu
+)";
+		std::cout << str;
+		std::cout << "===================\n";
+		std::cin >> input;
+		if (input == '1')
+		{
+			cpu_pattern = random;
+			break;
+		}
+		else if (input == '2')
+		{
+			cpu_pattern = analyse_1;
+			break;
+		}
+		else
+			std::cout << "Wrong character!\n";
+	}
+	
+}
+
+char IntToChar(int input)
+{
+	if (input == 0)
+		return 'r';
+	else if (input == 1)
+		return 's';
+	else
+		return 'p';
 }
